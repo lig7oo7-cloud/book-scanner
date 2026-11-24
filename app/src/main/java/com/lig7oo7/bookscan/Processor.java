@@ -11,9 +11,6 @@ import android.graphics.Paint;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.OutputStreamWriter;
-import java.io.Writer;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -30,6 +27,9 @@ final class Processor {
         /** 글자가 충분한 쪽들 중 가장 낮은 확신도 (0~1), 그런 쪽이 없으면 -1 */
         float worstConf = -1f;
         int totalChars;
+        long ocrMs;
+        /** 글자 인식 자체가 실패했을 때 오류 내용 */
+        String ocrError;
 
         void deleteAll() {
             for (File f : files) Session.delete(f);
@@ -106,10 +106,7 @@ final class Processor {
             if (b != t) t.recycle();
         }
 
-        // 4) 문서 보정
-        if (Prefs.enhance(c)) Enhance.document(b);
-
-        // 5) 양면 나누기
+        // 4) 양면 나누기 (보정 전 원본 상태로)
         List<Bitmap> pages = new ArrayList<>();
         if (split && b.getWidth() > b.getHeight()) {
             int half = b.getWidth() / 2;
@@ -122,33 +119,47 @@ final class Processor {
             pages.add(b);
         }
 
-        // 6) 글자 인식 + 저장
+        // 5) 쪽마다: 글자 인식(원본으로 — 보정하면 얇은 획이 날아가 인식이 나빠짐) → 문서 보정 → 저장
         Result res = new Result();
+        boolean enhance = Prefs.enhance(c);
         try {
-            for (Bitmap p : pages) {
-                String text = null;
+            for (int i = 0; i < pages.size(); i++) {
+                Bitmap p = pages.get(i);
+                Ocr.Result r = null;
                 if (ocr != null) {
-                    Ocr.Result r = ocr.run(p);
-                    res.ocrRan = true;
-                    res.totalChars += r.chars;
-                    text = r.text;
-                    if (r.chars >= MIN_CHARS) {
-                        res.worstConf = res.worstConf < 0 ? r.conf : Math.min(res.worstConf, r.conf);
+                    try {
+                        r = ocr.run(p);
+                        res.ocrRan = true;
+                        res.totalChars += r.chars;
+                        res.ocrMs += r.ms;
+                        if (r.chars >= MIN_CHARS && r.conf >= 0) {
+                            res.worstConf = res.worstConf < 0 ? r.conf : Math.min(res.worstConf, r.conf);
+                        }
+                    } catch (Throwable t) {
+                        res.ocrError = t.getClass().getSimpleName() + ": " + t.getMessage();
                     }
+                }
+                if (enhance) {
+                    if (!p.isMutable()) {
+                        Bitmap m = p.copy(Bitmap.Config.ARGB_8888, true);
+                        p.recycle();
+                        p = m;
+                        pages.set(i, p);
+                    }
+                    Enhance.document(p);
                 }
                 File f = save(s, p, quality);
                 res.files.add(f);
-                if (text != null) {
-                    try (Writer w = new OutputStreamWriter(new FileOutputStream(Session.textOf(f)), StandardCharsets.UTF_8)) {
-                        w.write(text);
-                    }
+                if (r != null) {
+                    PageFiles.writeText(f, r.text);
+                    PageFiles.writeLines(f, r.lines);
                 }
             }
         } catch (Exception e) {
             res.deleteAll();
             throw e;
         } finally {
-            for (Bitmap p : pages) p.recycle();
+            for (Bitmap p : pages) if (!p.isRecycled()) p.recycle();
         }
         return res;
     }

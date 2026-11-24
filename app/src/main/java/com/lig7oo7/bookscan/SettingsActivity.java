@@ -64,6 +64,10 @@ public class SettingsActivity extends Activity {
         header(col, "스캔 보정·글자 확인");
         enhance = sw(col, "문서 보정 (흑백, 배경 하얗게)", "끄면 컬러 원본. 사진·그림 위주 책이면 끄세요", Prefs.enhance(this));
         ocr = sw(col, "찍을 때마다 글자 인식 확인", "흐리게 찍히면 경고음과 함께 자동으로 다시 찍어요", Prefs.ocrCheck(this));
+        Button ocrTest = new Button(this);
+        ocrTest.setText("글자 인식 시험");
+        ocrTest.setOnClickListener(v -> testOcr());
+        col.addView(ocrTest, new LinearLayout.LayoutParams(-2, -2));
         ocrMin = num(col, "통과 기준 (%)", "화면 위에 나오는 '읽힘 %'를 보고 맞추세요. 멀쩡한데 자꾸 다시 찍으면 낮추세요.",
                 String.valueOf(Prefs.ocrMin(this)), false);
 
@@ -137,6 +141,71 @@ public class SettingsActivity extends Activity {
         } catch (NumberFormatException ex) {
             Toast.makeText(this, "숫자를 확인해주세요", Toast.LENGTH_SHORT).show();
             return false;
+        }
+    }
+
+    /** 1) 앱이 직접 그린 한글 글자  2) 마지막으로 찍은 쪽 — 둘 다 인식해 보고 결과를 보여준다 */
+    private void testOcr() {
+        Toast.makeText(this, "시험 중… (몇 초)", Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            StringBuilder sb = new StringBuilder();
+            Ocr o = null;
+            try {
+                o = new Ocr();
+                android.graphics.Bitmap b = android.graphics.Bitmap.createBitmap(1400, 420, android.graphics.Bitmap.Config.ARGB_8888);
+                android.graphics.Canvas cv = new android.graphics.Canvas(b);
+                cv.drawColor(android.graphics.Color.WHITE);
+                android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+                p.setColor(android.graphics.Color.BLACK);
+                p.setTextSize(64);
+                cv.drawText("사과 결실관리 적과 시험", 60, 150, p);
+                cv.drawText("Apple 2026 테스트 123", 60, 300, p);
+                sb.append("① 앱이 그린 글자 (정답: 사과 결실관리 적과 시험 / Apple 2026 테스트 123)\n");
+                sb.append(describe(o, b)).append("\n\n");
+                b.recycle();
+            } catch (Throwable t) {
+                sb.append("① 글자 인식 엔진을 못 켰어요: ").append(t.getClass().getSimpleName())
+                  .append(": ").append(t.getMessage()).append("\n\n");
+            }
+            try {
+                java.io.File last = new Session(this).last();
+                if (last == null) {
+                    sb.append("② 찍은 쪽이 없어서 건너뜀");
+                } else if (o != null) {
+                    android.graphics.Bitmap b = android.graphics.BitmapFactory.decodeFile(last.getPath());
+                    sb.append("② 마지막 쪽 ").append(last.getName()).append(" (")
+                      .append(b.getWidth()).append("x").append(b.getHeight()).append(")\n");
+                    sb.append(describe(o, b));
+                    b.recycle();
+                }
+            } catch (Throwable t) {
+                sb.append("② 오류: ").append(t.getClass().getSimpleName()).append(": ").append(t.getMessage());
+            }
+            if (o != null) o.close();
+            final String m = sb.toString();
+            runOnUiThread(() -> {
+                TextView tv = new TextView(this);
+                tv.setTextIsSelectable(true);
+                tv.setPadding(dp(20), dp(16), dp(20), dp(16));
+                tv.setText(m);
+                ScrollView sv = new ScrollView(this);
+                sv.addView(tv);
+                new android.app.AlertDialog.Builder(this).setTitle("글자 인식 시험 결과")
+                        .setView(sv).setPositiveButton("확인", null).show();
+            });
+        }).start();
+    }
+
+    private static String describe(Ocr o, android.graphics.Bitmap b) {
+        try {
+            Ocr.Result r = o.run(b);
+            String t = r.text.length() > 300 ? r.text.substring(0, 300) + "…" : r.text;
+            return "→ " + r.chars + "자, 줄 " + r.lines.size() + "개, 확신도 "
+                    + (r.conf < 0 ? "알 수 없음" : Math.round(r.conf * 100) + "%") + ", " + r.ms + "ms\n"
+                    + (t.isEmpty() ? "(아무 글자도 못 찾음)" : t);
+        } catch (Throwable t) {
+            return "→ 오류: " + t.getClass().getSimpleName() + ": " + t.getMessage()
+                    + (t.getCause() != null ? " / " + t.getCause() : "");
         }
     }
 

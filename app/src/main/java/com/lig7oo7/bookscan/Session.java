@@ -63,6 +63,8 @@ public final class Session {
     static boolean delete(File jpg) {
         //noinspection ResultOfMethodCallIgnored
         textOf(jpg).delete();
+        //noinspection ResultOfMethodCallIgnored
+        PageFiles.linesOf(jpg).delete();
         return jpg.delete();
     }
 

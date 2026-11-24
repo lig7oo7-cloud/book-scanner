@@ -630,17 +630,24 @@ public class MainActivity extends ComponentActivity implements MotionAnalyzer.Li
     private void judge(Processor.Result r, boolean manual, boolean autoMissed) {
         int min = Prefs.ocrMin(this);
         String pages = (r.files.size() == 2 ? "2쪽" : "1쪽") + (autoMissed ? "(테두리 못 찾아 전체)" : "");
-        if (!r.ocrRan) {
+        if (r.ocrError != null) {
+            retries = 0;
+            beep();
+            setResult("⚠ " + pages + " 저장 · 글자 인식 오류: " + r.ocrError, 0xFFFF8A65);
+        } else if (!r.ocrRan) {
             retries = 0;
             setResult("✓ " + pages + " 저장 (글자 확인 꺼짐)", 0xFFB2DFDB);
         } else if (r.worstConf < 0) {
             retries = 0;
-            setResult("✓ " + pages + " 저장 · 글자 거의 없음(" + r.totalChars + "자) — 그림·빈 쪽이 아니면 확인하세요", 0xFFFFD54F);
+            setResult("✓ " + pages + " 저장 · " + (r.totalChars >= Processor.MIN_CHARS
+                    ? r.totalChars + "자 인식 (" + r.ocrMs + "ms)"
+                    : "글자 거의 없음(" + r.totalChars + "자) — 그림·빈 쪽이 아니면 ⚙ '글자 인식 시험'을 눌러보세요"), 
+                    r.totalChars >= Processor.MIN_CHARS ? 0xFF80CBC4 : 0xFFFFD54F);
         } else {
             int pct = Math.round(r.worstConf * 100);
             if (pct >= min) {
                 retries = 0;
-                setResult("✓ " + pages + " 저장 · 읽힘 " + pct + "% · " + r.totalChars + "자", 0xFF80CBC4);
+                setResult("✓ " + pages + " 저장 · 읽힘 " + pct + "% · " + r.totalChars + "자 (" + r.ocrMs + "ms)", 0xFF80CBC4);
             } else if (!manual && retries < MAX_RETRY) {
                 retries++;
                 r.deleteAll();
@@ -754,7 +761,7 @@ public class MainActivity extends ComponentActivity implements MotionAnalyzer.Li
                 List<PdfWriter.Page> pages = new ArrayList<>();
                 for (File f : files) {
                     int[] s = Processor.size(f);
-                    pages.add(new PdfWriter.Page(f, s[0], s[1]));
+                    pages.add(new PdfWriter.Page(f, s[0], s[1], PageFiles.readLines(f)));
                 }
                 File dir = new File(getCacheDir(), "pdf");
                 //noinspection ResultOfMethodCallIgnored
