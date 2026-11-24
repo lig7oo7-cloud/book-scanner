@@ -46,7 +46,7 @@ final class Enhance {
 
         // 2) 한 줄씩: 밝기 / 종이밝기 → 대비 늘리기
         int[] row = new int[w], brow = new int[w];
-        final float lo = 0.35f, hi = 0.92f;
+        final float lo = 0.25f, hi = 0.93f;   // 연한 글씨도 남도록 완만하게
         for (int y = 0; y < h; y++) {
             b.getPixels(row, 0, w, 0, y, w, 1);
             bg.getPixels(brow, 0, w, 0, y, w, 1);
