@@ -10,7 +10,7 @@ import java.util.Locale;
 
 /**
  * 지금 찍고 있는 책 한 권의 페이지들. 앱 내부 저장소(files/pages)에
- * p00001.jpg(스캔) + p00001.txt(인식된 글자) 순서로 쌓인다. 앱을 껐다 켜도 이어서 찍을 수 있다.
+ * p00001.jpg(스캔) + p00001.txt(인식된 글자) + p00001.ocr(글자 위치) 순서로 쌓인다. 앱을 껐다 켜도 이어서 찍을 수 있다.
  */
 public final class Session {
     final File dir;
@@ -46,6 +46,12 @@ public final class Session {
         return new File(p.substring(0, p.length() - 4) + ".txt");
     }
 
+    /** 글자 위치(PDF 글자층용) */
+    static File ocrOf(File jpg) {
+        String p = jpg.getPath();
+        return new File(p.substring(0, p.length() - 4) + ".ocr");
+    }
+
     synchronized List<File> pages() { return new ArrayList<>(Arrays.asList(list())); }
 
     synchronized int count() { return list().length; }
@@ -63,6 +69,8 @@ public final class Session {
     static boolean delete(File jpg) {
         //noinspection ResultOfMethodCallIgnored
         textOf(jpg).delete();
+        //noinspection ResultOfMethodCallIgnored
+        ocrOf(jpg).delete();
         return jpg.delete();
     }
 

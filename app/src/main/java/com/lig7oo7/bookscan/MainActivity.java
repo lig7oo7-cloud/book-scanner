@@ -6,6 +6,9 @@ import android.content.ClipData;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.media.AudioManager;
@@ -46,6 +49,7 @@ import androidx.camera.core.ImageCaptureException;
 import androidx.camera.core.ImageProxy;
 import androidx.camera.core.MeteringPoint;
 import androidx.camera.core.Preview;
+import androidx.camera.core.SurfaceOrientedMeteringPointFactory;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
 import androidx.core.content.ContextCompat;
@@ -67,6 +71,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends ComponentActivity implements MotionAnalyzer.Listener {
 
@@ -373,14 +378,6 @@ public class MainActivity extends ComponentActivity implements MotionAnalyzer.Li
                 .show();
     }
 
-    /** 지금 찍을 사진에 쓸 범위 */
-    private float[] currentQuad() {
-        int cm = Prefs.cropMode(this);
-        if (cm == Prefs.CROP_FIXED) return Prefs.crop(this);
-        if (cm == Prefs.CROP_AUTO && tracker != null) return tracker.fresh(1500);
-        return null;
-    }
-
     private void toggleCropEdit() {
         if (!cropOverlay.isEditing()) {
             cropOverlay.setEditing(true);
@@ -436,8 +433,10 @@ public class MainActivity extends ComponentActivity implements MotionAnalyzer.Li
         File last = session.last();
         if (last == null) return;
         io.execute(() -> {
-            Bitmap bm = Processor.thumb(last, 1400);
+            Bitmap bm0 = Processor.thumb(last, 1400);
             String text = readText(Session.textOf(last));
+            List<OcrLine> lines = OcrLine.read(Session.ocrOf(last));
+            Bitmap bm = bm0 == null ? null : drawBoxes(bm0, lines, Processor.size(last));
             main.post(() -> {
                 LinearLayout col = new LinearLayout(this);
                 col.setOrientation(LinearLayout.VERTICAL);
@@ -449,7 +448,9 @@ public class MainActivity extends ComponentActivity implements MotionAnalyzer.Li
                     TextView tv = new TextView(this);
                     tv.setPadding(dp(16), dp(12), dp(16), dp(12));
                     tv.setTextSize(13);
-                    tv.setText("인식된 글자:\n" + (text.length() > 600 ? text.substring(0, 600) + "…" : text));
+                    tv.setTextIsSelectable(true);
+                    tv.setText("초록 상자 = 글자로 인식된 줄 (" + lines.size() + "줄)\n\n"
+                            + (text.length() > 1500 ? text.substring(0, 1500) + "…" : text));
                     col.addView(tv);
                 }
                 android.widget.ScrollView sv = new android.widget.ScrollView(this);
@@ -462,6 +463,30 @@ public class MainActivity extends ComponentActivity implements MotionAnalyzer.Li
                         .show();
             });
         });
+    }
+
+    /** 쪽 사진 위에 인식된 줄마다 초록 상자 — 어디가 읽혔고 어디가 빠졌는지 한눈에 */
+    private static Bitmap drawBoxes(Bitmap src, List<OcrLine> lines, int[] full) {
+        if (lines.isEmpty() || full[0] <= 0) return src;
+        Bitmap b = src.isMutable() ? src : src.copy(Bitmap.Config.ARGB_8888, true);
+        if (b != src) src.recycle();
+        float sc = (float) b.getWidth() / full[0];
+        Canvas c = new Canvas(b);
+        Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        fill.setColor(0x3300E676);
+        Paint edge = new Paint(Paint.ANTI_ALIAS_FLAG);
+        edge.setStyle(Paint.Style.STROKE);
+        edge.setStrokeWidth(Math.max(1.5f, b.getWidth() / 500f));
+        edge.setColor(0xFF00C853);
+        for (OcrLine l : lines) {
+            Path p = new Path();
+            p.moveTo(l.pts[0] * sc, l.pts[1] * sc);
+            for (int i = 1; i < 4; i++) p.lineTo(l.pts[2 * i] * sc, l.pts[2 * i + 1] * sc);
+            p.close();
+            c.drawPath(p, fill);
+            c.drawPath(p, edge);
+        }
+        return b;
     }
 
     private static String readText(File f) {
@@ -491,7 +516,7 @@ public class MainActivity extends ComponentActivity implements MotionAnalyzer.Li
 
                 imageCapture = new ImageCapture.Builder()
                         .setTargetAspectRatio(AspectRatio.RATIO_4_3)
-                        .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                        .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)   // 글자 선명도 우선
                         .setJpegQuality(95)
                         .build();
 
@@ -525,9 +550,8 @@ public class MainActivity extends ComponentActivity implements MotionAnalyzer.Li
             return;
         }
         if (paused) return;
-        if (busy) {
+        if (busy) {            // 상태 글은 촬영 단계(초점·촬영·글자 찾기)가 직접 띄움
             stableSince = 0;
-            setStatus("🔎 스캔·글자 확인 중…");
             return;
         }
         long now = SystemClock.elapsedRealtime();
@@ -585,8 +609,33 @@ public class MainActivity extends ComponentActivity implements MotionAnalyzer.Li
         busy = true;
         lastCapSig = sig;
         final boolean manual = !dupCheck;
-        final float[] quad = currentQuad();
-        final boolean autoMissed = quad == null && Prefs.cropMode(this) == Prefs.CROP_AUTO;
+        final float[] quad = Prefs.cropMode(this) == Prefs.CROP_AUTO && tracker != null ? tracker.fresh(3000) : null;
+        if (analyzer != null) analyzer.setTracker(null);      // 찍고 처리하는 동안 미리보기 글자 찾기 쉬기 (CPU 양보)
+        setStatus("🎯 초점 맞추는 중…");
+        // 자동 촬영은 손을 뗀 직후라 초점이 안 맞았을 수 있다 → 가운데에 초점·노출을 다시 맞춘 뒤 찍는다
+        focusThen(() -> shoot(manual, quad));
+    }
+
+    /** 초점 맞추기가 끝나면(또는 1.5초가 지나면) next 실행 — 메인 스레드 */
+    private void focusThen(Runnable next) {
+        java.util.concurrent.atomic.AtomicBoolean once = new java.util.concurrent.atomic.AtomicBoolean();
+        Runnable go = () -> { if (once.compareAndSet(false, true)) next.run(); };
+        main.postDelayed(go, 1500);
+        try {
+            MeteringPoint pt = new SurfaceOrientedMeteringPointFactory(1f, 1f).createPoint(0.5f, 0.5f);
+            FocusMeteringAction a = new FocusMeteringAction.Builder(pt,
+                    FocusMeteringAction.FLAG_AF | FocusMeteringAction.FLAG_AE)
+                    .setAutoCancelDuration(3, TimeUnit.SECONDS).build();
+            camera.getCameraControl().startFocusAndMetering(a)
+                    .addListener(go, ContextCompat.getMainExecutor(this));
+        } catch (Exception e) {
+            go.run();
+        }
+    }
+
+    private void shoot(boolean manual, float[] quad) {
+        if (imageCapture == null) { busy = false; resumeTracker(); return; }
+        setStatus("📸 찍는 중…");
         flash.setAlpha(0.8f);
         flash.animate().alpha(0f).setDuration(250).start();
         if (Prefs.sound(this)) shutterSound.play(MediaActionSound.SHUTTER_CLICK);
@@ -608,39 +657,54 @@ public class MainActivity extends ComponentActivity implements MotionAnalyzer.Li
                         if (ocr == null) ocr = new Ocr();
                         o = ocr;
                     }
+                    setStatus("🔎 테두리·글자 찾는 중…");
                     Processor.Result r = Processor.process(MainActivity.this, session, jpeg, rot, quad, o);
-                    judge(r, manual, autoMissed);
+                    judge(r, manual);
                 } catch (Throwable t) {
                     if (!closed) image.close();
                     toast("저장 실패: " + t.getMessage());
                 } finally {
                     busy = false;
+                    main.post(MainActivity.this::resumeTracker);
                 }
             }
 
             @Override
             public void onError(@NonNull ImageCaptureException e) {
                 busy = false;
+                main.post(MainActivity.this::resumeTracker);
                 toast("촬영 실패: " + e.getMessage());
             }
         });
     }
 
+    private void resumeTracker() {
+        if (analyzer != null && tracker != null && Prefs.cropMode(this) == Prefs.CROP_AUTO) analyzer.setTracker(tracker);
+    }
+
     /** io 스레드: 글자 인식 결과로 통과/재촬영 판단 */
-    private void judge(Processor.Result r, boolean manual, boolean autoMissed) {
+    private void judge(Processor.Result r, boolean manual) {
         int min = Prefs.ocrMin(this);
-        String pages = (r.files.size() == 2 ? "2쪽" : "1쪽") + (autoMissed ? "(테두리 못 찾아 전체)" : "");
+        String pages = (r.files.size() == 2 ? "2쪽" : "1쪽") + (r.autoMissed ? "(테두리 못 찾음)" : "");
+        String peek = "";
+        if (r.firstText != null && !r.firstText.isEmpty()) {
+            String one = r.firstText.replace('\n', ' ').trim();
+            peek = "\n“" + (one.length() > 40 ? one.substring(0, 40) + "…" : one) + "”";
+        }
         if (!r.ocrRan) {
             retries = 0;
             setResult("✓ " + pages + " 저장 (글자 확인 꺼짐)", 0xFFB2DFDB);
-        } else if (r.worstConf < 0) {
+        } else if (r.totalChars < Processor.MIN_CHARS) {
             retries = 0;
             setResult("✓ " + pages + " 저장 · 글자 거의 없음(" + r.totalChars + "자) — 그림·빈 쪽이 아니면 확인하세요", 0xFFFFD54F);
+        } else if (r.worstConf < 0) {
+            retries = 0;
+            setResult("✓ " + pages + " 저장 · 글자 " + r.totalChars + "자 · " + r.lines + "줄 인식" + peek, 0xFF80CBC4);
         } else {
             int pct = Math.round(r.worstConf * 100);
             if (pct >= min) {
                 retries = 0;
-                setResult("✓ " + pages + " 저장 · 읽힘 " + pct + "% · " + r.totalChars + "자", 0xFF80CBC4);
+                setResult("✓ " + pages + " 저장 · 읽힘 " + pct + "% · " + r.totalChars + "자 · " + r.lines + "줄" + peek, 0xFF80CBC4);
             } else if (!manual && retries < MAX_RETRY) {
                 retries++;
                 r.deleteAll();
@@ -728,7 +792,7 @@ public class MainActivity extends ComponentActivity implements MotionAnalyzer.Li
                 : "\n(드라이브 자동 연결 전이라 공유창으로 보내요 — ⚙ 설정에서 연결)";
         new AlertDialog.Builder(this)
                 .setTitle("책 이름 (" + n + "쪽)")
-                .setMessage("PDF와 글자 파일(.txt)을 만들어요." + where)
+                .setMessage("글자 검색되는 PDF와 글자 파일(.txt)을 만들어요." + where)
                 .setView(et)
                 .setPositiveButton("만들기", (d, w) -> makeAndSend(et.getText().toString()))
                 .setNegativeButton("취소", (d, w) -> setPaused(false))
@@ -754,7 +818,7 @@ public class MainActivity extends ComponentActivity implements MotionAnalyzer.Li
                 List<PdfWriter.Page> pages = new ArrayList<>();
                 for (File f : files) {
                     int[] s = Processor.size(f);
-                    pages.add(new PdfWriter.Page(f, s[0], s[1]));
+                    pages.add(new PdfWriter.Page(f, s[0], s[1], OcrLine.read(Session.ocrOf(f))));
                 }
                 File dir = new File(getCacheDir(), "pdf");
                 //noinspection ResultOfMethodCallIgnored

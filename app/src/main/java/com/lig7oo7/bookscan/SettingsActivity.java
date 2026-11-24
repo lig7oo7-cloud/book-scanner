@@ -19,7 +19,7 @@ import android.widget.Toast;
 public class SettingsActivity extends Activity {
 
     private EditText stable, sens, interval, dup, maxLong, quality, ocrMin, driveUrl, driveKey, margin;
-    private Switch split, rightFirst, sound, enhance, ocr, delAfter;
+    private Switch split, rightFirst, sound, enhance, ocr, delAfter, autoOrient;
     private RadioGroup rot;
 
     @Override
@@ -62,6 +62,7 @@ public class SettingsActivity extends Activity {
                 String.valueOf(Prefs.marginPct(this)), false);
 
         header(col, "스캔 보정·글자 확인");
+        autoOrient = sw(col, "방향 자동 맞추기", "글자 방향을 보고 쪽을 바로 세워요. 책을 옆으로 놓고 찍어도 돼요", Prefs.autoOrient(this));
         enhance = sw(col, "문서 보정 (흑백, 배경 하얗게)", "끄면 컬러 원본. 사진·그림 위주 책이면 끄세요", Prefs.enhance(this));
         ocr = sw(col, "찍을 때마다 글자 인식 확인", "흐리게 찍히면 경고음과 함께 자동으로 다시 찍어요", Prefs.ocrCheck(this));
         ocrMin = num(col, "통과 기준 (%)", "화면 위에 나오는 '읽힘 %'를 보고 맞추세요. 멀쩡한데 자꾸 다시 찍으면 낮추세요.",
@@ -124,6 +125,7 @@ public class SettingsActivity extends Activity {
             e.putBoolean("rightFirst", rightFirst.isChecked());
             e.putBoolean("sound", sound.isChecked());
             e.putBoolean("enhance", enhance.isChecked());
+            e.putBoolean("autoOrient", autoOrient.isChecked());
             e.putInt("margin", (int) clamp(Integer.parseInt(margin.getText().toString().trim()), 0, 30));
             e.putBoolean("ocr", ocr.isChecked());
             e.putInt("ocrMin", (int) clamp(Integer.parseInt(ocrMin.getText().toString().trim()), 0, 100));

@@ -82,7 +82,9 @@ public final class Prefs {
     // ── 글자 인식 확인 ──
     static boolean ocrCheck(Context c) { return sp(c).getBoolean("ocr", true); }
     /** 이 %보다 인식 확신도가 낮으면 흐린 사진으로 보고 다시 찍음 */
-    static int ocrMin(Context c) { return sp(c).getInt("ocrMin", 60); }
+    static int ocrMin(Context c) { return sp(c).getInt("ocrMin", 50); }
+    /** 글자 방향을 보고 쪽을 자동으로 바로 세움 (책을 옆으로 놓고 찍어도 됨) */
+    static boolean autoOrient(Context c) { return sp(c).getBoolean("autoOrient", true); }
 
     // ── 구글 드라이브 ──
     static String driveUrl(Context c) { return sp(c).getString("driveUrl", "").trim(); }

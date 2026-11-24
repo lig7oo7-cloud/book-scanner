@@ -96,11 +96,17 @@ final class TextTracker {
                 lines.add(pts);
             }
         }
-        float[] q = QuadMath.quadAround(lines, dW, dH, marginPct / 100f);
-        if (q == null) {
+        // 책이 옆으로 누워 있어도 글자 방향대로 사각형을 잡는다
+        float[] px = QuadMath.pageQuad(lines, dW, dH, marginPct / 100f);
+        if (px == null) {
             // 잠깐 놓쳐도 바로 지우지 않음 (fresh()의 유효시간으로 자연히 만료)
             listener.onQuad(fresh(1200), 0);
             return;
+        }
+        float[] q = new float[8];
+        for (int i = 0; i < 4; i++) {
+            q[2 * i] = px[2 * i] / dW;
+            q[2 * i + 1] = px[2 * i + 1] / dH;
         }
         float[] prev = quad;
         if (prev != null && SystemClock.elapsedRealtime() - quadTime < 1500 && QuadMath.maxDelta(prev, q) < 0.12f) {
