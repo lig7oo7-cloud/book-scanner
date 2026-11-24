@@ -245,6 +245,7 @@ public class MainActivity extends ComponentActivity implements MotionAnalyzer.Li
         resultText.setTextColor(0xFFB2DFDB);
         resultText.setPadding(0, dp(4), 0, 0);
         topCol.addView(resultText);
+        resultText.setOnClickListener(v -> openViewer(lastGroup != null && !lastGroup.isEmpty() ? lastGroup.get(0) : null));
         root.addView(topCol, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
 
         // 아래쪽
@@ -284,7 +285,7 @@ public class MainActivity extends ComponentActivity implements MotionAnalyzer.Li
         thumb = new ImageView(this);
         thumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
         thumb.setBackgroundColor(0x33FFFFFF);
-        thumb.setOnClickListener(v -> showLast());
+        thumb.setOnClickListener(v -> openViewer(null));
         row2.addView(thumb, new LinearLayout.LayoutParams(dp(56), dp(72)));
 
         TextView undo = btn("↶ 되돌리기", 0x55FFFFFF);
@@ -430,6 +431,17 @@ public class MainActivity extends ComponentActivity implements MotionAnalyzer.Li
             Bitmap bm = Processor.thumb(last, 200);
             main.post(() -> thumb.setImageBitmap(bm));
         });
+    }
+
+    /** 쪽 보기 화면 열기 (page가 null이면 마지막 쪽) */
+    private void openViewer(File page) {
+        if (session.count() == 0) {
+            toast("아직 찍은 쪽이 없어요");
+            return;
+        }
+        Intent i = new Intent(this, PageViewerActivity.class);
+        if (page != null) i.putExtra(PageViewerActivity.EXTRA_INDEX, session.pages().indexOf(page));
+        startActivity(i);
     }
 
     private void showLast() {
@@ -640,14 +652,14 @@ public class MainActivity extends ComponentActivity implements MotionAnalyzer.Li
         } else if (r.worstConf < 0) {
             retries = 0;
             setResult("✓ " + pages + " 저장 · " + (r.totalChars >= Processor.MIN_CHARS
-                    ? r.totalChars + "자 인식 (" + r.ocrMs + "ms)"
+                    ? r.totalChars + "자 인식 — 눌러서 확인 ›"
                     : "글자 거의 없음(" + r.totalChars + "자) — 그림·빈 쪽이 아니면 ⚙ '글자 인식 시험'을 눌러보세요"), 
                     r.totalChars >= Processor.MIN_CHARS ? 0xFF80CBC4 : 0xFFFFD54F);
         } else {
             int pct = Math.round(r.worstConf * 100);
             if (pct >= min) {
                 retries = 0;
-                setResult("✓ " + pages + " 저장 · 읽힘 " + pct + "% · " + r.totalChars + "자 (" + r.ocrMs + "ms)", 0xFF80CBC4);
+                setResult("✓ " + pages + " 저장 · 읽힘 " + pct + "% · " + r.totalChars + "자 — 눌러서 확인 ›", 0xFF80CBC4);
             } else if (!manual && retries < MAX_RETRY) {
                 retries++;
                 r.deleteAll();
