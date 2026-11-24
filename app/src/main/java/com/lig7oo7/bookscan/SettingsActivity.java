@@ -18,8 +18,8 @@ import android.widget.Toast;
 
 public class SettingsActivity extends Activity {
 
-    private EditText stable, sens, interval, dup, maxLong, quality;
-    private Switch split, rightFirst, sound;
+    private EditText stable, sens, interval, dup, maxLong, quality, ocrMin, driveUrl, driveKey;
+    private Switch split, rightFirst, sound, enhance, ocr, delAfter;
     private RadioGroup rot;
 
     @Override
@@ -56,6 +56,29 @@ public class SettingsActivity extends Activity {
             if (d == cur) r.setChecked(true);
         }
         col.addView(rot);
+
+        header(col, "스캔 보정·글자 확인");
+        enhance = sw(col, "문서 보정 (흑백, 배경 하얗게)", "끄면 컬러 원본. 사진·그림 위주 책이면 끄세요", Prefs.enhance(this));
+        ocr = sw(col, "찍을 때마다 글자 인식 확인", "흐리게 찍히면 경고음과 함께 자동으로 다시 찍어요", Prefs.ocrCheck(this));
+        ocrMin = num(col, "통과 기준 (%)", "화면 위에 나오는 '읽힘 %'를 보고 맞추세요. 멀쩡한데 자꾸 다시 찍으면 낮추세요.",
+                String.valueOf(Prefs.ocrMin(this)), false);
+
+        header(col, "구글 드라이브 자동 업로드");
+        label(col, "웹 앱 주소", "Apps Script 배포 후 받은 주소 (https://script.google.com/macros/s/…/exec)");
+        driveUrl = new EditText(this);
+        driveUrl.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        driveUrl.setText(Prefs.driveUrl(this));
+        col.addView(driveUrl, new LinearLayout.LayoutParams(-1, -2));
+        label(col, "비밀키", "Code.gs 맨 위 KEY와 똑같이");
+        driveKey = new EditText(this);
+        driveKey.setInputType(InputType.TYPE_CLASS_TEXT);
+        driveKey.setText(Prefs.driveKey(this));
+        col.addView(driveKey, new LinearLayout.LayoutParams(-1, -2));
+        delAfter = sw(col, "올린 뒤 폰에서 사진 지우기", "업로드 성공했을 때만 지워요", Prefs.deleteAfterUpload(this));
+        Button test = new Button(this);
+        test.setText("연결 확인");
+        test.setOnClickListener(v -> testDrive());
+        col.addView(test, new LinearLayout.LayoutParams(-2, -2));
 
         header(col, "화질·용량");
         maxLong = num(col, "사진 긴 변 최대 (픽셀)", "2400이면 글씨 인식에 충분. 줄이면 용량↓ (쪽당 약 0.3~0.6MB)",
@@ -96,6 +119,12 @@ public class SettingsActivity extends Activity {
             e.putBoolean("split", split.isChecked());
             e.putBoolean("rightFirst", rightFirst.isChecked());
             e.putBoolean("sound", sound.isChecked());
+            e.putBoolean("enhance", enhance.isChecked());
+            e.putBoolean("ocr", ocr.isChecked());
+            e.putInt("ocrMin", (int) clamp(Integer.parseInt(ocrMin.getText().toString().trim()), 0, 100));
+            e.putString("driveUrl", driveUrl.getText().toString().trim());
+            e.putString("driveKey", driveKey.getText().toString().trim());
+            e.putBoolean("delAfter", delAfter.isChecked());
             int id = rot.getCheckedRadioButtonId();
             e.putInt("rot", id >= 1000 ? id - 1000 : 0);
             e.apply();
@@ -104,6 +133,28 @@ public class SettingsActivity extends Activity {
             Toast.makeText(this, "숫자를 확인해주세요", Toast.LENGTH_SHORT).show();
             return false;
         }
+    }
+
+    private void testDrive() {
+        String url = driveUrl.getText().toString().trim(), key = driveKey.getText().toString().trim();
+        if (url.isEmpty() || key.isEmpty()) {
+            Toast.makeText(this, "주소와 비밀키를 넣어주세요", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Toast.makeText(this, "확인 중…", Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            String msg;
+            try {
+                String folder = new DriveUploader(url, key).ping();
+                msg = "✓ 연결됐어요! 드라이브 '책스캔' 폴더에 올라가요";
+                android.util.Log.i("bookscan", "folder " + folder);
+            } catch (Exception ex) {
+                msg = "✗ 연결 실패: " + ex.getMessage();
+            }
+            final String m = msg;
+            runOnUiThread(() -> new android.app.AlertDialog.Builder(this)
+                    .setMessage(m).setPositiveButton("확인", null).show());
+        }).start();
     }
 
     private static float clamp(float v, float lo, float hi) { return Math.max(lo, Math.min(hi, v)); }

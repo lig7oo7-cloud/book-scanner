@@ -9,8 +9,8 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * 지금 찍고 있는 책 한 권의 페이지들. 앱 내부 저장소(files/pages)에 p00001.jpg 순서로 쌓인다.
- * 앱을 껐다 켜도 이어서 찍을 수 있다.
+ * 지금 찍고 있는 책 한 권의 페이지들. 앱 내부 저장소(files/pages)에
+ * p00001.jpg(스캔) + p00001.txt(인식된 글자) 순서로 쌓인다. 앱을 껐다 켜도 이어서 찍을 수 있다.
  */
 public final class Session {
     final File dir;
@@ -41,6 +41,11 @@ public final class Session {
         }
     }
 
+    static File textOf(File jpg) {
+        String p = jpg.getPath();
+        return new File(p.substring(0, p.length() - 4) + ".txt");
+    }
+
     synchronized List<File> pages() { return new ArrayList<>(Arrays.asList(list())); }
 
     synchronized int count() { return list().length; }
@@ -54,8 +59,16 @@ public final class Session {
         return fs.length == 0 ? null : fs[fs.length - 1];
     }
 
+    /** 쪽 하나(사진+글자) 지우기 */
+    static boolean delete(File jpg) {
+        //noinspection ResultOfMethodCallIgnored
+        textOf(jpg).delete();
+        return jpg.delete();
+    }
+
     synchronized void clear() {
-        for (File f : list()) //noinspection ResultOfMethodCallIgnored
+        File[] all = dir.listFiles();
+        if (all != null) for (File f : all) //noinspection ResultOfMethodCallIgnored
             f.delete();
         next = 1;
     }

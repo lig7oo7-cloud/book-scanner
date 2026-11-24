@@ -3,6 +3,8 @@ package com.lig7oo7.bookscan;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import java.util.Locale;
+
 /** 설정값 모음. 기본값은 여기 한 곳에서만 정한다. */
 public final class Prefs {
     private Prefs() {}
@@ -34,8 +36,52 @@ public final class Prefs {
     /** 저장 사진 긴 변 최대 픽셀 */
     static int maxLong(Context c) { return sp(c).getInt("maxLong", 2400); }
     static int jpegQuality(Context c) { return sp(c).getInt("quality", 85); }
-
     static boolean sound(Context c) { return sp(c).getBoolean("sound", true); }
+
+    // ── 스캔 보정 ──
+    static final float[] FULL = {0, 0, 1, 0, 1, 1, 0, 1};
+
+    /** 잘라낼 범위: 화면 기준 0~1 좌표, 왼위·오른위·오른아래·왼아래 순 8개 */
+    static float[] crop(Context c) {
+        String s = sp(c).getString("crop", "");
+        try {
+            String[] p = s.split(",");
+            if (p.length == 8) {
+                float[] q = new float[8];
+                for (int i = 0; i < 8; i++) q[i] = Float.parseFloat(p[i]);
+                return q;
+            }
+        } catch (Exception ignored) { }
+        return FULL.clone();
+    }
+
+    static void setCrop(Context c, float[] q) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 8; i++) {
+            if (i > 0) sb.append(',');
+            sb.append(String.format(Locale.US, "%.4f", q[i]));
+        }
+        sp(c).edit().putString("crop", sb.toString()).apply();
+    }
+
+    static boolean isFull(float[] q) {
+        for (int i = 0; i < 8; i++) if (Math.abs(q[i] - FULL[i]) > 0.002f) return false;
+        return true;
+    }
+
+    /** 문서 보정: 배경 하얗게, 글씨 진하게(흑백) */
+    static boolean enhance(Context c) { return sp(c).getBoolean("enhance", true); }
+
+    // ── 글자 인식 확인 ──
+    static boolean ocrCheck(Context c) { return sp(c).getBoolean("ocr", true); }
+    /** 이 %보다 인식 확신도가 낮으면 흐린 사진으로 보고 다시 찍음 */
+    static int ocrMin(Context c) { return sp(c).getInt("ocrMin", 60); }
+
+    // ── 구글 드라이브 ──
+    static String driveUrl(Context c) { return sp(c).getString("driveUrl", "").trim(); }
+    static String driveKey(Context c) { return sp(c).getString("driveKey", "").trim(); }
+    static boolean driveReady(Context c) { return !driveUrl(c).isEmpty() && !driveKey(c).isEmpty(); }
+    static boolean deleteAfterUpload(Context c) { return sp(c).getBoolean("delAfter", true); }
 
     static String bookName(Context c) { return sp(c).getString("book", ""); }
     static void setBookName(Context c, String s) { sp(c).edit().putString("book", s).apply(); }
