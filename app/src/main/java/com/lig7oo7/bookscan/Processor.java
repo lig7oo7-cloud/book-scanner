@@ -141,9 +141,9 @@ final class Processor {
                 }
                 if (enhance) {
                     if (!p.isMutable()) {
-                        Bitmap m = p.copy(Bitmap.Config.ARGB_8888, true);
+                        Bitmap mut = p.copy(Bitmap.Config.ARGB_8888, true);
                         p.recycle();
-                        p = m;
+                        p = mut;
                         pages.set(i, p);
                     }
                     Enhance.document(p);
