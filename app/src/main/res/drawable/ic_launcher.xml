@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp" android:height="48dp"
+    android:viewportWidth="48" android:viewportHeight="48">
+    <path android:fillColor="#2E7D6B"
+        android:pathData="M10,2h28a8,8 0 0 1 8,8v28a8,8 0 0 1 -8,8h-28a8,8 0 0 1 -8,-8v-28a8,8 0 0 1 8,-8z"/>
+    <!-- 펼친 책 -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M8,14c5,-2 11,-2 15,1v20c-4,-3 -10,-3 -15,-1z"/>
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M40,14c-5,-2 -11,-2 -15,1v20c4,-3 10,-3 15,-1z"/>
+    <!-- 렌즈 -->
+    <path android:fillColor="#FFB300"
+        android:pathData="M21,8a3,3 0 1 0 6,0a3,3 0 1 0 -6,0z"/>
+</vector>
