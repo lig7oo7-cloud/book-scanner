@@ -14,6 +14,8 @@ android {
         targetSdk 34
         versionCode runNumber
         versionName "1.0." + runNumber
+        // 갤럭시(64비트 ARM)용만 넣어 용량 절약
+        ndk { abiFilters "arm64-v8a" }
     }
 
     // 고정 서명키: 새 버전을 받아도 지우지 않고 바로 덮어 설치 가능
