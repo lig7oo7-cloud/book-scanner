@@ -69,6 +69,13 @@ public final class Prefs {
         return true;
     }
 
+    /** 자르기 방식: 0 = 글자 따라 자동 테두리, 1 = 고정 범위(거치대), 2 = 자르지 않음 */
+    static final int CROP_AUTO = 0, CROP_FIXED = 1, CROP_NONE = 2;
+    static int cropMode(Context c) { return sp(c).getInt("cropMode", CROP_AUTO); }
+    static void setCropMode(Context c, int m) { sp(c).edit().putInt("cropMode", m).apply(); }
+    /** 자동 테두리: 글자 바깥으로 둘 여백(%) */
+    static int marginPct(Context c) { return sp(c).getInt("margin", 4); }
+
     /** 문서 보정: 배경 하얗게, 글씨 진하게(흑백) */
     static boolean enhance(Context c) { return sp(c).getBoolean("enhance", true); }
 

@@ -17,8 +17,12 @@ final class MotionAnalyzer implements ImageAnalysis.Analyzer {
 
     private final Listener listener;
     private int[] prev;
+    private volatile TextTracker tracker;
 
     MotionAnalyzer(Listener l) { listener = l; }
+
+    /** null이면 글자 테두리 추적 끔 */
+    void setTracker(TextTracker t) { tracker = t; }
 
     @Override
     public void analyze(@NonNull ImageProxy img) {
@@ -35,6 +39,10 @@ final class MotionAnalyzer implements ImageAnalysis.Analyzer {
                     int idx = y * rs + x * ps;
                     sig[j * GX + i] = idx < buf.limit() ? (buf.get(idx) & 0xff) : 0;
                 }
+            }
+            TextTracker t = tracker;
+            if (t != null && !t.busy()) {
+                t.submit(buf, rs, ps, w, h, img.getImageInfo().getRotationDegrees());
             }
             float diff = prev == null ? -1f : meanAbsDiff(sig, prev, false);
             prev = sig;

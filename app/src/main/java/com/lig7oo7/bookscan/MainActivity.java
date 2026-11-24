@@ -17,6 +17,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.text.InputType;
+import android.util.Size;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -87,6 +88,8 @@ public class MainActivity extends ComponentActivity implements MotionAnalyzer.Li
     private MediaActionSound shutterSound;
     private ToneGenerator tone;
     private Ocr ocr;                    // io 스레드에서만 사용
+    private MotionAnalyzer analyzer;
+    private TextTracker tracker;
 
     // 분석 스레드와 같이 쓰는 상태
     private volatile boolean busy, paused, torch;
@@ -151,6 +154,7 @@ public class MainActivity extends ComponentActivity implements MotionAnalyzer.Li
         shutterSound.release();
         if (tone != null) tone.release();
         io.execute(() -> { if (ocr != null) ocr.close(); });
+        if (tracker != null) tracker.close();
         io.shutdown();
         analysisExec.shutdown();
     }
@@ -164,7 +168,7 @@ public class MainActivity extends ComponentActivity implements MotionAnalyzer.Li
         stableT = Math.max(2.5f, motionT * 0.4f);    // 민감도 5 → 4
         modeBtn.setText(modeLabel());
         if (!cropOverlay.isEditing()) cropOverlay.setQuad(Prefs.crop(this));
-        cropBtn.setText(Prefs.isFull(Prefs.crop(this)) ? "✂ 범위" : "✂ 범위✓");
+        applyCropMode();
         needMotion = false;
         stableSince = 0;
         motionFrames = 0;
@@ -260,14 +264,7 @@ public class MainActivity extends ComponentActivity implements MotionAnalyzer.Li
         pauseBtn = btn("⏸ 멈춤", 0x55FFFFFF);
         pauseBtn.setOnClickListener(v -> setPaused(!paused));
         cropBtn = btn("✂ 범위", 0x55FFFFFF);
-        cropBtn.setOnClickListener(v -> toggleCropEdit());
-        cropBtn.setOnLongClickListener(v -> {
-            Prefs.setCrop(this, Prefs.FULL);
-            cropOverlay.setQuad(Prefs.FULL);
-            loadPrefs();
-            toast("범위를 전체 화면으로 되돌렸어요");
-            return true;
-        });
+        cropBtn.setOnClickListener(v -> cropMenu());
         torchBtn = btn("💡", 0x55FFFFFF);
         torchBtn.setOnClickListener(v -> {
             torch = !torch;
@@ -338,19 +335,66 @@ public class MainActivity extends ComponentActivity implements MotionAnalyzer.Li
         }
     }
 
+    private void applyCropMode() {
+        int cm = Prefs.cropMode(this);
+        if (cm == Prefs.CROP_AUTO) {
+            if (tracker == null) {
+                tracker = new TextTracker((q, lines) -> main.post(() -> cropOverlay.setLive(q)));
+            }
+            tracker.setMargin(Prefs.marginPct(this));
+            if (analyzer != null) analyzer.setTracker(tracker);
+            cropOverlay.setShowFixed(false);
+            cropBtn.setText("▣ 자동테두리");
+        } else {
+            if (analyzer != null) analyzer.setTracker(null);
+            if (tracker != null) tracker.reset();
+            cropOverlay.setLive(null);
+            cropOverlay.setShowFixed(cm == Prefs.CROP_FIXED);
+            cropBtn.setText(cm == Prefs.CROP_FIXED ? "✂ 고정범위" : "□ 전체");
+        }
+    }
+
+    private void cropMenu() {
+        if (cropOverlay.isEditing()) {
+            toggleCropEdit();
+            return;
+        }
+        String[] items = {
+                "▣ 자동 테두리 — 글자를 따라 테두리가 움직여요 (추천)",
+                "✂ 고정 범위 — 거치대에 고정했을 때, 모서리 직접 맞추기",
+                "□ 자르지 않음 — 화면 전체 저장"};
+        new AlertDialog.Builder(this)
+                .setTitle("자르기 방식")
+                .setItems(items, (d, which) -> {
+                    Prefs.setCropMode(this, which);
+                    loadPrefs();
+                    if (which == Prefs.CROP_FIXED) toggleCropEdit();
+                })
+                .show();
+    }
+
+    /** 지금 찍을 사진에 쓸 범위 */
+    private float[] currentQuad() {
+        int cm = Prefs.cropMode(this);
+        if (cm == Prefs.CROP_FIXED) return Prefs.crop(this);
+        if (cm == Prefs.CROP_AUTO && tracker != null) return tracker.fresh(1500);
+        return null;
+    }
+
     private void toggleCropEdit() {
         if (!cropOverlay.isEditing()) {
             cropOverlay.setEditing(true);
             setPaused(true);
             cropBtn.setText("✔ 범위 저장");
             setStatus("노란 점 4개를 책(펼친 면) 모서리에 맞추세요");
-            setResult("길게 누르면 전체 화면으로 되돌려요", 0xFFB2DFDB);
+            setResult("다 맞췄으면 '✔ 범위 저장'을 누르세요", 0xFFB2DFDB);
         } else {
             cropOverlay.setEditing(false);
             Prefs.setCrop(this, cropOverlay.getQuad());
             loadPrefs();
             setPaused(false);
             setResult("범위 저장 — 이제 이 범위만 잘라 반듯하게 펴서 저장해요", 0xFFB2DFDB);
+            return;
         }
     }
 
@@ -451,18 +495,21 @@ public class MainActivity extends ComponentActivity implements MotionAnalyzer.Li
                         .setJpegQuality(95)
                         .build();
 
+                // 글자 줄을 찾으려면 너무 작으면 안 됨 → 1280x960 (4:3)
                 ImageAnalysis analysis = new ImageAnalysis.Builder()
-                        .setTargetAspectRatio(AspectRatio.RATIO_4_3)
+                        .setTargetResolution(new Size(960, 1280))
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build();
-                analysis.setAnalyzer(analysisExec, new MotionAnalyzer(this));
+                analyzer = new MotionAnalyzer(this);
+                analysis.setAnalyzer(analysisExec, analyzer);
+                applyCropMode();
 
                 camera = provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA,
                         preview, imageCapture, analysis);
                 if (torch) camera.getCameraControl().enableTorch(true);
                 setStatus(modeHelp());
-                if (Prefs.isFull(Prefs.crop(this)))
-                    setResult("처음이면 ✂ 범위를 눌러 책 모서리를 맞춰주세요", 0xFFFFD54F);
+                if (Prefs.cropMode(this) == Prefs.CROP_AUTO)
+                    setResult("초록 테두리가 글자를 감싸면 준비 완료", 0xFFB2DFDB);
             } catch (Exception e) {
                 setStatus("카메라를 열지 못했어요: " + e.getMessage());
             }
@@ -538,6 +585,8 @@ public class MainActivity extends ComponentActivity implements MotionAnalyzer.Li
         busy = true;
         lastCapSig = sig;
         final boolean manual = !dupCheck;
+        final float[] quad = currentQuad();
+        final boolean autoMissed = quad == null && Prefs.cropMode(this) == Prefs.CROP_AUTO;
         flash.setAlpha(0.8f);
         flash.animate().alpha(0f).setDuration(250).start();
         if (Prefs.sound(this)) shutterSound.play(MediaActionSound.SHUTTER_CLICK);
@@ -559,8 +608,8 @@ public class MainActivity extends ComponentActivity implements MotionAnalyzer.Li
                         if (ocr == null) ocr = new Ocr();
                         o = ocr;
                     }
-                    Processor.Result r = Processor.process(MainActivity.this, session, jpeg, rot, o);
-                    judge(r, manual);
+                    Processor.Result r = Processor.process(MainActivity.this, session, jpeg, rot, quad, o);
+                    judge(r, manual, autoMissed);
                 } catch (Throwable t) {
                     if (!closed) image.close();
                     toast("저장 실패: " + t.getMessage());
@@ -578,9 +627,9 @@ public class MainActivity extends ComponentActivity implements MotionAnalyzer.Li
     }
 
     /** io 스레드: 글자 인식 결과로 통과/재촬영 판단 */
-    private void judge(Processor.Result r, boolean manual) {
+    private void judge(Processor.Result r, boolean manual, boolean autoMissed) {
         int min = Prefs.ocrMin(this);
-        String pages = r.files.size() == 2 ? "2쪽" : "1쪽";
+        String pages = (r.files.size() == 2 ? "2쪽" : "1쪽") + (autoMissed ? "(테두리 못 찾아 전체)" : "");
         if (!r.ocrRan) {
             retries = 0;
             setResult("✓ " + pages + " 저장 (글자 확인 꺼짐)", 0xFFB2DFDB);

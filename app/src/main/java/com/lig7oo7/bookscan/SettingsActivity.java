@@ -18,7 +18,7 @@ import android.widget.Toast;
 
 public class SettingsActivity extends Activity {
 
-    private EditText stable, sens, interval, dup, maxLong, quality, ocrMin, driveUrl, driveKey;
+    private EditText stable, sens, interval, dup, maxLong, quality, ocrMin, driveUrl, driveKey, margin;
     private Switch split, rightFirst, sound, enhance, ocr, delAfter;
     private RadioGroup rot;
 
@@ -56,6 +56,10 @@ public class SettingsActivity extends Activity {
             if (d == cur) r.setChecked(true);
         }
         col.addView(rot);
+
+        header(col, "자동 테두리");
+        margin = num(col, "글자 바깥 여백 (%)", "테두리를 글자보다 이만큼 넓게 잡아요. 쪽번호·그림이 잘리면 늘리세요.",
+                String.valueOf(Prefs.marginPct(this)), false);
 
         header(col, "스캔 보정·글자 확인");
         enhance = sw(col, "문서 보정 (흑백, 배경 하얗게)", "끄면 컬러 원본. 사진·그림 위주 책이면 끄세요", Prefs.enhance(this));
@@ -120,6 +124,7 @@ public class SettingsActivity extends Activity {
             e.putBoolean("rightFirst", rightFirst.isChecked());
             e.putBoolean("sound", sound.isChecked());
             e.putBoolean("enhance", enhance.isChecked());
+            e.putInt("margin", (int) clamp(Integer.parseInt(margin.getText().toString().trim()), 0, 30));
             e.putBoolean("ocr", ocr.isChecked());
             e.putInt("ocrMin", (int) clamp(Integer.parseInt(ocrMin.getText().toString().trim()), 0, 100));
             e.putString("driveUrl", driveUrl.getText().toString().trim());

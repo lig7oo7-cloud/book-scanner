@@ -16,6 +16,9 @@ import android.view.View;
 final class CropOverlay extends View {
     private final float[] q = Prefs.FULL.clone();
     private boolean editing;
+    private float[] live;                 // 글자 따라 찾은 테두리 (자동 모드)
+    private boolean showFixed = true;
+    private final Paint liveLine = new Paint(Paint.ANTI_ALIAS_FLAG);
     private int active = -1;
     private final RectF content = new RectF();
     private final Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -32,6 +35,20 @@ final class CropOverlay extends View {
         line.setColor(0xFF4DD0B1);
         handle.setColor(0xFFFFB300);
         dim.setColor(0x66000000);
+        liveLine.setStyle(Paint.Style.STROKE);
+        liveLine.setStrokeWidth(4 * density);
+        liveLine.setColor(0xFF00E676);
+    }
+
+    /** 자동 테두리 표시 (null이면 숨김) */
+    void setLive(float[] q) {
+        live = q;
+        invalidate();
+    }
+
+    void setShowFixed(boolean s) {
+        showFixed = s;
+        invalidate();
     }
 
     void setQuad(float[] v) {
@@ -66,7 +83,15 @@ final class CropOverlay extends View {
 
     @Override
     protected void onDraw(Canvas c) {
-        if (!editing && Prefs.isFull(q)) return;
+        if (!editing && live != null) {
+            Path lp = new Path();
+            lp.moveTo(content.left + live[0] * content.width(), content.top + live[1] * content.height());
+            for (int i = 1; i < 4; i++)
+                lp.lineTo(content.left + live[2 * i] * content.width(), content.top + live[2 * i + 1] * content.height());
+            lp.close();
+            c.drawPath(lp, liveLine);
+        }
+        if (!editing && (!showFixed || Prefs.isFull(q))) return;
         path.reset();
         path.moveTo(px(0), py(0));
         for (int i = 1; i < 4; i++) path.lineTo(px(i), py(i));

@@ -39,12 +39,12 @@ final class Processor {
     /** 이보다 글자가 적으면 그림·빈 쪽으로 보고 흐림 판정에서 뺀다 */
     static final int MIN_CHARS = 20;
 
-    static Result process(Context c, Session s, byte[] jpeg, int camRot, Ocr ocr) throws Exception {
+    static Result process(Context c, Session s, byte[] jpeg, int camRot, float[] quad, Ocr ocr) throws Exception {
         boolean split = Prefs.split(c);
         int maxLong = Prefs.maxLong(c);
         int quality = Prefs.jpegQuality(c);
         int limit = split ? Math.round(maxLong * 1.45f) : maxLong;
-        float[] q = Prefs.crop(c);
+        float[] q = quad != null ? quad : Prefs.FULL;
 
         // 1) 적당한 크기로 읽기
         BitmapFactory.Options o = new BitmapFactory.Options();
